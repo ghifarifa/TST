@@ -9,7 +9,7 @@ from passlib.context import CryptContext
 from starlette.responses import RedirectResponse
 
 
-app = FastAPI()
+app = FastAPI(title="Tugas TST - UTS 18219105")
 SECRET_KEY = "09d25e094faa6ca2556c818166b7a9563b93f7099f6f0f4caa6cf63b88e8d3e7"
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
@@ -22,7 +22,7 @@ dummies_db = {
         "username": "asdf",
         "full_name": "John Doe",
         "email": "johndoe@example.com",
-        "hashed_password": "$2b$12$EixZaYVK1fsbw1ZfbX3OXePaWxn96p36WQoeG6Lruj3vjPGga31lW",
+        "hashed_password": "$2b$12$LgB0KEfyUGBvmdVtckmjdOZF77bXjBppuK4EOLXfPNTyI3OXW8gze",
         "disabled": False,
     }
 }
