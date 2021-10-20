@@ -7,7 +7,6 @@ from typing import Optional
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 from starlette.responses import RedirectResponse
-#from datetime import datetime, timedelta
 
 
 app = FastAPI()
@@ -17,7 +16,6 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
-
 
 dummies_db = {
     "asdf": {
@@ -79,14 +77,8 @@ def authenticate_user(fake_db, username: str, password: str):
     return user
 
 
-#def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
 def create_access_token(data: dict):
     to_encode = data.copy()
-    # if expires_delta:
-    #     expire = datetime.utcnow() + expires_delta
-    # else:
-    #     expire = datetime.utcnow() + timedelta(minutes=15)
-    # to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 
@@ -123,11 +115,9 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
             detail="Incorrect username or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    #access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
         data={"sub": user.username}
-        #data={"sub": user.username}, expires_delta=access_token_expires
-    )
+       )
     return {"access_token": access_token, "token_type": "bearer"}
 
 @app.get('/menu')
