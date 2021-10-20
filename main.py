@@ -198,3 +198,7 @@ async def delete_menu(item_id: int, current_user: User = Depends(get_current_act
 	raise HTTPException(
 		status_code=404, detail=f'item not found'
 	)
+
+@app.get("/")
+async def docs_redirect():
+    return RedirectResponse(url='/docs')
