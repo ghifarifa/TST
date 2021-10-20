@@ -60,4 +60,4 @@ jobs:
         with:
           app-name: 'ghifari18219105'
           slot-name: 'Production'
-          publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_4FA5AC451FE2496EA7E995FE3AD6FA09 }}
+          publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_EC77D9849B1E4069BA235F6A42E3F8B7 }}
