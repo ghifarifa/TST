@@ -1,80 +1,200 @@
+from fastapi import Depends, FastAPI, HTTPException, status
 import json
-from fastapi import Request, FastAPI, HTTPException
-from starlette.responses import RedirectResponse
+from pydantic import BaseModel
+
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from typing import Optional
+from jose import JWTError, jwt
+from passlib.context import CryptContext
+#from datetime import datetime, timedelta
 
 
 app = FastAPI()
+SECRET_KEY = "09d25e094faa6ca2556c818166b7a9563b93f7099f6f0f4caa6cf63b88e8d3e7"
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 30
+
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 
 
-with open('menu.json', 'r') as read_file:
-    data = json.load(read_file)
+dummies_db = {
+    "asdf": {
+        "username": "asdf",
+        "full_name": "John Doe",
+        "email": "johndoe@example.com",
+        "hashed_password": "$2b$12$EixZaYVK1fsbw1ZfbX3OXePaWxn96p36WQoeG6Lruj3vjPGga31lW",
+        "disabled": False,
+    }
+}
 
 
-def saveJson(obj):
-    with open('menu.json', 'w') as dumpFile:
-        json.dump(obj, dumpFile)
+class Item(BaseModel):
+	id: int
+	name: str
+
+class Token(BaseModel):
+    access_token: str
+    token_type: str
 
 
-menu = data['menu']
+class TokenData(BaseModel):
+    username: Optional[str] = None
 
 
-# routing
+class User(BaseModel):
+    username: str
+    email: Optional[str] = None
+    full_name: Optional[str] = None
+    disabled: Optional[bool] = None
 
-@app.get('/')
-def root():
-    return RedirectResponse('/docs')
+
+class UserInDB(User):
+    hashed_password: str
+  
+with open("menu.json","r") as read_file:
+	data = json.load(read_file)
+
+def verify_password(plain_password, hashed_password):
+    return pwd_context.verify(plain_password, hashed_password)
 
 
-@app.get('/menu/')
-async def read_menu():
+def get_password_hash(password):
+    return pwd_context.hash(password)
+
+
+def get_user(db, username: str):
+    if username in db:
+        user_dict = db[username]
+        return UserInDB(**user_dict)
+
+
+def authenticate_user(fake_db, username: str, password: str):
+    user = get_user(fake_db, username)
+    if not user:
+        return False
+    if not verify_password(password, user.hashed_password):
+        return False
+    return user
+
+
+#def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
+def create_access_token(data: dict):
+    to_encode = data.copy()
+    # if expires_delta:
+    #     expire = datetime.utcnow() + expires_delta
+    # else:
+    #     expire = datetime.utcnow() + timedelta(minutes=15)
+    # to_encode.update({"exp": expire})
+    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return encoded_jwt
+
+async def get_current_user(login: str = Depends(oauth2_scheme)):
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
     try:
-        return menu
-    except:
-        raise HTTPException(status_code=404, detail=f'item not found')
+        payload = jwt.decode(login, SECRET_KEY, algorithms=[ALGORITHM])
+        username: str = payload.get("sub")
+        if username is None:
+            raise credentials_exception
+        token_data = TokenData(username=username)
+    except JWTError:
+        raise credentials_exception
+    user = get_user(dummies_db, username=token_data.username)
+    if user is None:
+        raise credentials_exception
+    return user
+
+async def get_current_active_user(current_user: User = Depends(get_current_user)):
+    if current_user.disabled:
+        raise HTTPException(status_code=400, detail="Inactive user")
+    return current_user
+
+@app.post("/login", response_model=Token)
+async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
+    user = authenticate_user(dummies_db, form_data.username, form_data.password)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect username or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    #access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(
+        data={"sub": user.username}, expires_delta=access_token_expires
+    )
+    return {"access_token": access_token, "token_type": "bearer"}
+
+@app.get('/menu')
+async def read_all_menu(current_user: User = Depends(get_current_active_user)):
+	return data['menu']
 
 
 @app.get('/menu/{item_id}')
-async def read_menu(item_id: int):
-    for menu_item in menu:
-        if menu_item['id'] == item_id:
-            return(menu_item)
-    raise HTTPException(status_code=404, detail=f'item not found')
+async def read_menu(item_id: int, current_user: User = Depends(get_current_active_user)):
+	for menu_item in data['menu']:
+		if menu_item['id'] == item_id:
+			return menu_item
+	raise HTTPException(
+		status_code=404, detail=f'item not found'
+	)
 
+@app.post('/menu')
+async def add_menu(item: Item, current_user: User = Depends(get_current_active_user)):
+	item_dict = item.dict()
+	item_found = False
+	for menu_item in data['menu']:
+		if menu_item['id'] == item_dict['id']:
+			item_found = True
+			return "Menu ID "+str(item_dict['id'])+" exists."
+	
+	if not item_found:
+		data['menu'].append(item_dict)
+		with open("menu.json","w") as write_file:
+			json.dump(data, write_file)
 
-@app.post('/menu/')
-async def add_menu(request: Request):
-    menuObjTemp = {'id': len(menu)+1}
-    # get request body in json format
-    req = await request.json()
-    # add the new menu name from request body to menuObjTemp
-    menuObjTemp['name'] = req['name']
+		return item_dict
+	raise HTTPException(
+		status_code=404, detail=f'item not found'
+	)
 
-    # rewrite data menu with new menu
-    menu.append(menuObjTemp)
-    data['menu'] = menu
-
-    saveJson(data)
-    return(menuObjTemp)
-
-
-@app.patch('/menu/{item_id}')
-async def update_menu(item_id: int, request: Request):
-    req = await request.json()
-    for menu_item in menu:
-        if menu_item['id'] == item_id:
-            menu_item['name'] = req['name']
-            return(menu_item)
-    data['menu'] = menu
-    saveJson(data)
-
+@app.patch('/menu')
+async def update_menu(item: Item, current_user: User = Depends(get_current_active_user)):
+	item_dict = item.dict()
+	item_found = False
+	for menu_idx, menu_item in enumerate(data['menu']):
+		if menu_item['id'] == item_dict['id']:
+			item_found = True
+			data['menu'][menu_idx]=item_dict
+			
+			with open("menu.json","w") as write_file:
+				json.dump(data, write_file)
+			return "updated"
+	
+	if not item_found:
+		return "Menu ID not found."
+	raise HTTPException(
+		status_code=404, detail=f'item not found'
+	)
 
 @app.delete('/menu/{item_id}')
-async def delete_menu(item_id: int):
-    for menu_item in menu:
-        if menu_item['id'] == item_id:
-            menu.remove(menu_item)
-            data['menu'] = menu
-            saveJson(data)
-            return(menu_item, "deleted")
+async def delete_menu(item_id: int, current_user: User = Depends(get_current_active_user)):
 
-    raise HTTPException(status_code=404, detail=f'item not found')
+	item_found = False
+	for menu_idx, menu_item in enumerate(data['menu']):
+		if menu_item['id'] == item_id:
+			item_found = True
+			data['menu'].pop(menu_idx)
+			
+			with open("menu.json","w") as write_file:
+				json.dump(data, write_file)
+			return "updated"
+	
+	if not item_found:
+		return "Menu ID not found."
+	raise HTTPException(
+		status_code=404, detail=f'item not found'
+	)
